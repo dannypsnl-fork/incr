@@ -1,10 +1,10 @@
 #lang scribble/manual
-@require[@for-label[minitt
+@require[@for-label[incr
                     racket/base]]
 
-@title{minitt}
-@author{dannypsnl}
+@title{incr}
+@author{Lîm Tsú-thuàn}
 
-@defmodule[minitt]
+@defmodule[incr]
 
 Package Description Here
