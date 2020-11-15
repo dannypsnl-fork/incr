@@ -1,6 +1,8 @@
 #lang racket
 
-(define init-Γ (make-hash))
+(define (make-env)
+  (make-hash))
+(define cur-Γ (make-parameter (make-env)))
 
 (struct Constructor (typ) #:transparent)
 (struct Value (v typ)
@@ -13,21 +15,24 @@
   (unless (equal? expect actual)
     (error 'semantic "type mismatched, expected: ~a, but got: ~a" expect actual)))
 (define (parse-constructor Γ c)
-  (match c
-    [`(,name : ,typ)
-     (hash-set! Γ name (Constructor typ))]))
-(define (run Γ statement)
+  (match-let ([`(,name : ,typ) c])
+    (hash-set! Γ name (Constructor typ))))
+(define (run statement)
   (match statement
     [`(,v : ,t)
-     (let ([v (eval v Γ)])
+     (let ([v (eval v (cur-Γ))])
        (ty-equal? t
                   (Value-typ v))
        v)]
     [`(data ,typ-name ,constructors* ...)
      typ-name
      (for ([c constructors*])
-       (parse-constructor Γ c))]
-    [exp (eval exp Γ)]))
+       (parse-constructor (cur-Γ) c))]
+    [`(data (,typ-name ,typ-dependencies) ,constructors* ...)
+     typ-name
+     (for ([c constructors*])
+       (parse-constructor (cur-Γ) c))]
+    [exp (displayln (eval exp (cur-Γ)))]))
 (define (eval exp Γ)
   (match exp
     [`(,app ,arg* ...)
@@ -40,7 +45,10 @@
              (for ([expect t*]
                    [actual (map (λ (a) (Value-typ a)) arg*)])
                (ty-equal? expect actual))
-             (Value `(,app ,@arg*) t)])]))]
+             (Value `(,app ,@arg*) t)])]
+         [else
+          (displayln app)
+          (displayln arg*)]))]
     [name
      (let ([v? (hash-ref Γ name #f)])
        (unless v? (error 'semantic "no identifier: ~a" name))
@@ -50,14 +58,25 @@
           v?]
          [t (Value name t)]))]))
 
-(run init-Γ '(data Nat
-                   [Zero : Nat]
-                   [Suc : (→ Nat Nat)]))
-(run init-Γ '(data Bool
-                   [True : Bool]
-                   [False : Bool]))
-(run init-Γ 'Zero)
-(run init-Γ '(Suc Zero))
-(run init-Γ '((Suc (Suc Zero)) : Nat))
-;;; error cases
-;@(run init-Γ '(Suc True))
+(parameterize ([cur-Γ (make-env)])
+  (run '(data Nat
+              [Zero : Nat]
+              [Suc : (→ Nat Nat)]))
+  (run '(data (List T)
+              [Nil : (List T)]
+              [Cons : (→ T (List T))]))
+  (run '(Cons Zero Nil)))
+
+(module+ test
+  (parameterize ([cur-Γ (make-env)])
+    (run '(data Nat
+                [Zero : Nat]
+                [Suc : (→ Nat Nat)]))
+    (run '(data Bool
+                [True : Bool]
+                [False : Bool]))
+    (run 'Zero)
+    (run '(Suc Zero))
+    (run '((Suc (Suc Zero)) : Nat))
+    ;;; error cases
+    #;(run '(Suc True))))
