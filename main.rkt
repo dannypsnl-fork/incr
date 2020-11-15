@@ -10,25 +10,51 @@
   [(define (write-proc value port mode)
      (fprintf port "~a" (Value-v value)))]
   #:transparent)
+(struct FreeVar (name)
+  #:methods gen:custom-write
+  [(define (write-proc var port mode)
+     (fprintf port "free{~a}" (FreeVar-name var)))]
+  #:transparent)
 
-(define (ty-equal? expect actual)
-  (unless (equal? expect actual)
-    (error 'semantic "type mismatched, expected: ~a, but got: ~a" expect actual)))
-(define (parse-constructor Γ c)
+(define (ty-equal? #:subst [subst (make-hash)] expect actual)
+  (match expect
+    [(FreeVar name)
+     (when (hash-ref subst name #f)
+       (error 'semantic "rebound"))
+     (hash-set! subst name actual)]
+    [else (unless (equal? expect actual)
+            (error 'semantic "type mismatched, expected: ~a, but got: ~a" expect actual))])
+  subst)
+(define (replace-occur #:in in #:occur occurs)
+  (match in
+    [`(,e* ...)
+     (map (λ (e) (replace-occur #:in e #:occur occurs)) e*)]
+    [v (let ([new-v (hash-ref occurs v #f)])
+         (if new-v new-v v))]))
+(define (parse-constructor Γ c [dependencies #f])
   (match-let ([`(,name : ,typ) c])
-    (hash-set! Γ name (Constructor typ))))
+    (match typ
+      [`(→ ,t* ... ,t)
+       #:when dependencies
+       (hash-set! Γ name
+                  (Constructor `(→ ,@(map (λ (t) (replace-occur #:in t #:occur dependencies)) t*) ,t)))]
+      [ty #:when dependencies
+          (hash-set! Γ name (Constructor (replace-occur #:in ty #:occur dependencies)))]
+      [else (hash-set! Γ name (Constructor typ))])))
 (define (run statement)
   (match statement
     [`(,v : ,t)
      (let ([v (eval v (cur-Γ))])
-       (ty-equal? t
-                  (Value-typ v))
+       (ty-equal? t (Value-typ v))
        v)]
-    [`(data ,typ-name ,constructors* ...)
+    [`(data (,typ-name ,typ-dependency* ...) ,constructors* ...)
      typ-name
+     (define deps (make-hash))
+     (for ([d typ-dependency*])
+       (hash-set! deps d (FreeVar d)))
      (for ([c constructors*])
-       (parse-constructor (cur-Γ) c))]
-    [`(data (,typ-name ,typ-dependencies) ,constructors* ...)
+       (parse-constructor (cur-Γ) c deps))]
+    [`(data ,typ-name ,constructors* ...)
      typ-name
      (for ([c constructors*])
        (parse-constructor (cur-Γ) c))]
@@ -42,13 +68,14 @@
          [(Constructor typ)
           (match typ
             [`(→ ,t* ... ,t)
-             (for ([expect t*]
-                   [actual (map (λ (a) (Value-typ a)) arg*)])
-               (ty-equal? expect actual))
-             (Value `(,app ,@arg*) t)])]
-         [else
-          (displayln app)
-          (displayln arg*)]))]
+             (let ([subst (make-hash)])
+               ; TODO: currying fix
+               (for ([expect t*]
+                     [actual (map (λ (a) (Value-typ a)) arg*)])
+                 (ty-equal? expect actual #:subst subst))
+               (Value `(,app ,@arg*)
+                      (replace-occur #:in t #:occur subst)))])]
+         [else (error 'semantic "not appliable: ~a" app)]))]
     [name
      (let ([v? (hash-ref Γ name #f)])
        (unless v? (error 'semantic "no identifier: ~a" name))
@@ -62,21 +89,25 @@
   (run '(data Nat
               [Zero : Nat]
               [Suc : (→ Nat Nat)]))
+  (run '(data Bool
+              [True : Bool]
+              [False : Bool]))
   (run '(data (List T)
               [Nil : (List T)]
-              [Cons : (→ T (List T))]))
-  (run '(Cons Zero Nil)))
+              [Cons : (→ T (List T) (List T))]))
+  (run '(Cons Zero Nil))
+  (run '(Cons Zero (Cons True Nil))))
 
-(module+ test
-  (parameterize ([cur-Γ (make-env)])
-    (run '(data Nat
-                [Zero : Nat]
-                [Suc : (→ Nat Nat)]))
-    (run '(data Bool
-                [True : Bool]
-                [False : Bool]))
-    (run 'Zero)
-    (run '(Suc Zero))
-    (run '((Suc (Suc Zero)) : Nat))
-    ;;; error cases
-    #;(run '(Suc True))))
+#;(module+ test
+    (parameterize ([cur-Γ (make-env)])
+      (run '(data Nat
+                  [Zero : Nat]
+                  [Suc : (→ Nat Nat)]))
+      (run '(data Bool
+                  [True : Bool]
+                  [False : Bool]))
+      (run 'Zero)
+      (run '(Suc Zero))
+      (run '((Suc (Suc Zero)) : Nat))
+      ;;; error cases
+      #;(run '(Suc True))))
