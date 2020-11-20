@@ -1,20 +1,11 @@
 #lang racket
 
+(require "core.rkt"
+         "substmap.rkt")
+
 (define (make-env)
   (make-hash))
 (define cur-Γ (make-parameter (make-env)))
-
-(struct Constructor (typ) #:transparent)
-(struct Value (v typ)
-  #:methods gen:custom-write
-  [(define (write-proc value port mode)
-     (fprintf port "~a" (Value-v value)))]
-  #:transparent)
-(struct FreeVar (name)
-  #:methods gen:custom-write
-  [(define (write-proc var port mode)
-     (fprintf port "free{~a}" (FreeVar-name var)))]
-  #:transparent)
 
 (define (ty-equal? #:subst [subst (make-hash)] expect actual)
   (match expect
@@ -25,19 +16,13 @@
     [else (unless (equal? expect actual)
             (error 'semantic "type mismatched, expected: ~a, but got: ~a" expect actual))])
   subst)
-(define (replace-occur #:in in #:occur occurs)
-  (match in
-    [`(,e* ...)
-     (map (λ (e) (replace-occur #:in e #:occur occurs)) e*)]
-    [v (let ([new-v (hash-ref occurs v #f)])
-         (if new-v new-v v))]))
 (define (parse-constructor Γ c [dependencies #f])
   (match-let ([`(,name : ,typ) c])
     (match typ
-      [`(→ ,t* ... ,t)
+      [`(→ ,t* ...)
        #:when dependencies
        (hash-set! Γ name
-                  (Constructor `(→ ,@(map (λ (t) (replace-occur #:in t #:occur dependencies)) t*) ,t)))]
+                  (Constructor `(→ ,@(map (λ (t) (replace-occur #:in t #:occur dependencies)) t*))))]
       [ty #:when dependencies
           (hash-set! Γ name (Constructor (replace-occur #:in ty #:occur dependencies)))]
       [else (hash-set! Γ name (Constructor typ))])))
@@ -45,7 +30,7 @@
   (match statement
     [`(,v : ,t)
      (let ([v (eval v (cur-Γ))])
-       (ty-equal? t (Value-typ v))
+       (unify t (Value-typ v))
        v)]
     [`(data (,typ-name ,typ-dependency* ...) ,constructors* ...)
      typ-name
@@ -68,13 +53,13 @@
          [(Constructor typ)
           (match typ
             [`(→ ,t* ... ,t)
-             (let ([subst (make-hash)])
+             (let ([subst (make-subst)])
                ; TODO: currying fix
                (for ([expect t*]
-                     [actual (map (λ (a) (Value-typ a)) arg*)])
-                 (ty-equal? expect actual #:subst subst))
+                     [arg arg*])
+                 (unify expect (Value-typ arg) #:subst subst))
                (Value `(,app ,@arg*)
-                      (replace-occur #:in t #:occur subst)))])]
+                      (replace-occur #:in t #:occur (subst-resolve subst))))])]
          [else (error 'semantic "not appliable: ~a" app)]))]
     [name
      (let ([v? (hash-ref Γ name #f)])
@@ -85,29 +70,30 @@
           v?]
          [t (Value name t)]))]))
 
-(parameterize ([cur-Γ (make-env)])
-  (run '(data Nat
-              [Zero : Nat]
-              [Suc : (→ Nat Nat)]))
-  (run '(data Bool
-              [True : Bool]
-              [False : Bool]))
-  (run '(data (List T)
-              [Nil : (List T)]
-              [Cons : (→ T (List T) (List T))]))
-  (run '(Cons Zero Nil))
-  (run '(Cons Zero (Cons True Nil))))
+(module+ test
+  (parameterize ([cur-Γ (make-env)])
+    (run '(data Nat
+                [Zero : Nat]
+                [Suc : (→ Nat Nat)]))
+    (run '(data Bool
+                [True : Bool]
+                [False : Bool]))
+    (run 'Zero)
+    (run '(Suc Zero))
+    (run '((Suc (Suc Zero)) : Nat))
+    ;; error case: semantic: type mismatched, expected: Nat, but got: Bool
+    #;(run '(Suc True)))
 
-#;(module+ test
-    (parameterize ([cur-Γ (make-env)])
-      (run '(data Nat
-                  [Zero : Nat]
-                  [Suc : (→ Nat Nat)]))
-      (run '(data Bool
-                  [True : Bool]
-                  [False : Bool]))
-      (run 'Zero)
-      (run '(Suc Zero))
-      (run '((Suc (Suc Zero)) : Nat))
-      ;;; error cases
-      #;(run '(Suc True))))
+  (parameterize ([cur-Γ (make-env)])
+    (run '(data Nat
+                [Zero : Nat]
+                [Suc : (→ Nat Nat)]))
+    (run '(data Bool
+                [True : Bool]
+                [False : Bool]))
+    (run '(data (List T)
+                [Nil : (List T)]
+                [Cons : (→ T (List T) (List T))]))
+    (run '(Cons Zero Nil))
+    ;; error case: semantic: type mismatched, expected: `Bool`, but got: `Nat`
+    #;(run '(Cons Zero (Cons True Nil)))))
