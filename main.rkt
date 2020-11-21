@@ -7,15 +7,6 @@
   (make-hash))
 (define cur-Γ (make-parameter (make-env)))
 
-(define (ty-equal? #:subst [subst (make-hash)] expect actual)
-  (match expect
-    [(FreeVar name)
-     (when (hash-ref subst name #f)
-       (error 'semantic "rebound"))
-     (hash-set! subst name actual)]
-    [else (unless (equal? expect actual)
-            (error 'semantic "type mismatched, expected: ~a, but got: ~a" expect actual))])
-  subst)
 (define (parse-constructor Γ c [dependencies #f])
   (match-let ([`(,name : ,typ) c])
     (match typ
