@@ -33,7 +33,7 @@
                      (for ([v v*])
                        (hash-set! resolved-map v bound?)))))
   (hash-union! resolved-map (subst-bound-map subst)
-                #:combine/key (λ (k a b) a))
+               #:combine/key (λ (k a b) a))
   resolved-map)
 
 (provide (struct-out FreeVar))
