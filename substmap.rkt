@@ -40,5 +40,5 @@
 (struct FreeVar (name typ)
   #:methods gen:custom-write
   [(define (write-proc var port mode)
-     (fprintf port "(free{~a} : ~a)" (FreeVar-name var) (FreeVar-typ var)))]
+     (fprintf port "(@~a : ~a)" (FreeVar-name var) (FreeVar-typ var)))]
   #:transparent)
