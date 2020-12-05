@@ -27,7 +27,10 @@
      typ-name
      (define deps (make-hash))
      (for ([d typ-dependency*])
-       (hash-set! deps d (FreeVar d)))
+       (match d
+         [`(,d ,dt)
+          (hash-set! deps d (FreeVar d dt))]
+         [d (hash-set! deps d (FreeVar d 'U))]))
      (for ([c constructors*])
        (parse-constructor (cur-Γ) c deps))]
     [`(data ,typ-name ,constructors* ...)
@@ -61,30 +64,39 @@
           v?]
          [t (Value name t)]))]))
 
-(module+ test
-  (parameterize ([cur-Γ (make-env)])
-    (run '(data Nat
-                [Zero : Nat]
-                [Suc : (→ Nat Nat)]))
-    (run '(data Bool
-                [True : Bool]
-                [False : Bool]))
-    (run 'Zero)
-    (run '(Suc Zero))
-    (run '((Suc (Suc Zero)) : Nat))
-    ;; error case: semantic: type mismatched, expected: Nat, but got: Bool
-    #;(run '(Suc True)))
+(parameterize ([cur-Γ (make-env)])
+  (run '(data Nat
+              [Zero : Nat]
+              [Suc : (→ Nat Nat)]))
+  (run '(data (Vec T [LEN Nat])
+              [Nil : (Vec T Zero)]
+              [Cons : (→ T (Vec T N) (Vec T (Suc N)))]))
+  (run '(Cons Zero Nil)))
 
-  (parameterize ([cur-Γ (make-env)])
-    (run '(data Nat
-                [Zero : Nat]
-                [Suc : (→ Nat Nat)]))
-    (run '(data Bool
-                [True : Bool]
-                [False : Bool]))
-    (run '(data (List T)
-                [Nil : (List T)]
-                [Cons : (→ T (List T) (List T))]))
-    (run '(Cons Zero Nil))
-    ;; error case: semantic: type mismatched, expected: `Bool`, but got: `Nat`
-    #;(run '(Cons Zero (Cons True Nil)))))
+#;(module+ test
+    (parameterize ([cur-Γ (make-env)])
+      (run '(data Nat
+                  [Zero : Nat]
+                  [Suc : (→ Nat Nat)]))
+      (run '(data Bool
+                  [True : Bool]
+                  [False : Bool]))
+      (run 'Zero)
+      (run '(Suc Zero))
+      (run '((Suc (Suc Zero)) : Nat))
+      ;; error case: semantic: type mismatched, expected: Nat, but got: Bool
+      #;(run '(Suc True)))
+
+    (parameterize ([cur-Γ (make-env)])
+      (run '(data Nat
+                  [Zero : Nat]
+                  [Suc : (→ Nat Nat)]))
+      (run '(data Bool
+                  [True : Bool]
+                  [False : Bool]))
+      (run '(data (List T)
+                  [Nil : (List T)]
+                  [Cons : (→ T (List T) (List T))]))
+      (run '(Cons Zero Nil))
+      ;; error case: semantic: type mismatched, expected: `Bool`, but got: `Nat`
+      #;(run '(Cons Zero (Cons True Nil)))))

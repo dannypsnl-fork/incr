@@ -43,10 +43,10 @@
 (module+ test
   (require rackunit)
 
-  (check-equal? (unify (FreeVar 'c) '(-> A B)) '(-> A B))
+  (check-equal? (unify (FreeVar 'c 'U) '(-> A B)) '(-> A B))
   (let ([s (make-subst)])
-    (unify (FreeVar 'a) 'A #:subst s)
-    (unify (FreeVar 'b) 'B #:subst s)
+    (unify (FreeVar 'a 'U) 'A #:subst s)
+    (unify (FreeVar 'b 'U) 'B #:subst s)
     (check-equal?
-     (unify (FreeVar 'c) `(-> ,(FreeVar 'a) ,(FreeVar 'b)) #:subst s)
+     (unify (FreeVar 'c 'U) `(-> ,(FreeVar 'a 'U) ,(FreeVar 'b 'U)) #:subst s)
      '(-> A B))))
