@@ -68,10 +68,11 @@
   (run '(data Nat
               [Zero : Nat]
               [Suc : (→ Nat Nat)]))
-  (run '(data (Vec T [LEN Nat])
+  (run '(data (Vec T [N Nat])
               [Nil : (Vec T Zero)]
               [Cons : (→ T (Vec T N) (Vec T (Suc N)))]))
-  (run '(Cons Zero Nil)))
+  (run '(Cons Zero Nil))
+  (run '(Cons Zero (Cons Zero Nil))))
 
 #;(module+ test
     (parameterize ([cur-Γ (make-env)])
