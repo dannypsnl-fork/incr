@@ -18,7 +18,7 @@
            (hash-set! (subst-free-map subst) key (list value))))]
     [{(? FreeVar?) _}
      (define cur-bound? (hash-ref (subst-bound-map subst) key #f))
-     (when cur-bound?
+     (when (and cur-bound? (not (equal? cur-bound? value)))
        (error 'semantic "type mismatched, expected: `~a`, but got: `~a`" value cur-bound?))
      (hash-set! (subst-bound-map subst) key value)]))
 
