@@ -50,7 +50,6 @@
     [`(define ,name : ,typ ,exp)
      (let ([s (make-subst)]
            [e (eval exp)])
-       (displayln (<-type e))
        (unify typ (<-type e) #:subst s)
        (bind name e))]
     [exp (displayln (eval exp))]))
