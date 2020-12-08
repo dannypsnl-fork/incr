@@ -7,20 +7,28 @@
   (make-hash))
 (define cur-Γ (make-parameter (make-env)))
 
-(define (parse-constructor Γ c [dependencies #f])
+(define (bind id val)
+  (hash-set! (cur-Γ) id val))
+(define (lookup id)
+  (hash-ref (cur-Γ) id #f))
+
+(define (<-type val)
+  (match val
+    [(Value _ ty) ty]))
+
+(define (parse-constructor c [dependencies #f])
   (match-let ([`(,name : ,typ) c])
     (match typ
       [`(→ ,t* ...)
        #:when dependencies
-       (hash-set! Γ name
-                  (Constructor `(→ ,@(map (λ (t) (replace-occur #:in t #:occur dependencies)) t*))))]
+       (bind name (Constructor `(→ ,@(map (λ (t) (replace-occur #:in t #:occur dependencies)) t*))))]
       [ty #:when dependencies
-          (hash-set! Γ name (Constructor (replace-occur #:in ty #:occur dependencies)))]
-      [else (hash-set! Γ name (Constructor typ))])))
+          (bind name (Constructor (replace-occur #:in ty #:occur dependencies)))]
+      [else (bind name (Constructor typ))])))
 (define (run statement)
   (match statement
     [`(,v : ,t)
-     (let ([v (eval v (cur-Γ))])
+     (let ([v (eval v)])
        (unify t (Value-typ v))
        v)]
     [`(data (,typ-name ,typ-dependency* ...) ,constructors* ...)
@@ -32,17 +40,25 @@
           (hash-set! deps d (FreeVar d dt))]
          [d (hash-set! deps d (FreeVar d 'U))]))
      (for ([c constructors*])
-       (parse-constructor (cur-Γ) c deps))]
+       (parse-constructor c deps))]
     [`(data ,typ-name ,constructors* ...)
      typ-name
      (for ([c constructors*])
-       (parse-constructor (cur-Γ) c))]
-    [exp (displayln (eval exp (cur-Γ)))]))
-(define (eval exp Γ)
+       (parse-constructor c))]
+    [`(define (,name param* ...) : ,typ ,exp)
+     (error 'todo)]
+    [`(define ,name : ,typ ,exp)
+     (let ([s (make-subst)]
+           [e (eval exp)])
+       (displayln (<-type e))
+       (unify typ (<-type e) #:subst s)
+       (bind name e))]
+    [exp (displayln (eval exp))]))
+(define (eval exp)
   (match exp
     [`(,app ,arg* ...)
-     (let ([appliable (eval app Γ)]
-           [arg* (map (λ (a) (eval a Γ)) arg*)])
+     (let ([appliable (eval app)]
+           [arg* (map (λ (a) (eval a)) arg*)])
        (match appliable
          [(Constructor typ)
           (match typ
@@ -54,26 +70,30 @@
                  (unify expect (Value-typ arg) #:subst subst))
                (Value `(,app ,@arg*)
                       (replace-occur #:in t #:occur (subst-resolve subst))))])]
+         [(Value _ _) appliable]
          [else (error 'semantic "not appliable: ~a" app)]))]
     [name
-     (let ([v? (hash-ref Γ name #f)])
+     (let ([v? (lookup name)])
        (unless v? (error 'semantic "no identifier: ~a" name))
-       (unless (Constructor? v?) (error 'semantic "not a constructor: ~a" name))
-       (match (Constructor-typ v?)
-         [`(→ ,t* ... ,t)
-          v?]
-         [t (Value name t)]))]))
+       (cond
+         [(Constructor? v?)
+          (match (Constructor-typ v?)
+            [`(→ ,t* ... ,t)
+             v?]
+            [t (Value name t)])]
+         [(Value? v?) v?]
+         [else (error 'unknown "unknown: ~a => ~a" name v?)]))]))
+
+(define pre-defined-Γ (make-env))
+(parameterize ([cur-Γ pre-defined-Γ])
+  (run '(data Nat
+              [Zero : Nat]
+              [Suc : (→ Nat Nat)]))
+  (run '(data Bool
+              [True : Bool]
+              [False : Bool])))
 
 (module+ test
-  (define pre-defined-Γ (make-env))
-  (parameterize ([cur-Γ pre-defined-Γ])
-    (run '(data Nat
-                [Zero : Nat]
-                [Suc : (→ Nat Nat)]))
-    (run '(data Bool
-                [True : Bool]
-                [False : Bool])))
-
   (parameterize ([cur-Γ pre-defined-Γ])
     (run 'Zero)
     (run '(Suc Zero))
@@ -96,4 +116,9 @@
     (run '(Cons Zero Nil))
     (run '(Cons (Suc Zero) (Cons Zero Nil)))
     ;; error case: semantic: type mismatched, expected: `Nat`, but got: `Bool`
-    #;(run '(Cons True (Cons Zero Nil)))))
+    #;(run '(Cons True (Cons Zero Nil))))
+
+  (parameterize ([cur-Γ pre-defined-Γ])
+    (run '(define one : Nat
+            (Suc Zero)))
+    (run 'one)))
