@@ -1,6 +1,6 @@
 #lang info
 (define collection "incr")
-(define deps '("base"))
+(define deps '("base" "nanopass"))
 (define build-deps '("scribble-lib" "racket-doc" "rackunit-lib"))
 (define scribblings '(("scribblings/incr.scrbl" ())))
 (define pkg-desc "Description Here")
