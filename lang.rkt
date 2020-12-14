@@ -15,10 +15,9 @@
    (variable (x))
    (: (:)))
   (Stmt (stmt)
-        (x : t)
         (data (x [x0 : t0] ...)
-              (x1 :1 t1) ...)
-        (data x (x0 : t0) ...)
+              (x* :1 t*) ...)
+        (data x (x* : t*) ...)
         (define (x [x* : t*] ...) :1
           t e)
         (define x : t e)
@@ -27,7 +26,7 @@
         x
         (e e* ...))
   (Typ (t)
-       (→ t0 t* ... t1)
+       (→ t* ... t)
        (x t* ...)
        x))
 
