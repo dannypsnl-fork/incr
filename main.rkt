@@ -134,47 +134,47 @@
               [True : Bool]
               [False : Bool])))
 
-(parameterize ([cur-Γ pre-defined-Γ])
-  (run '(define (is-zero? [n : Nat]) : Bool
-          (match n
-            [Zero => True]
-            [(Suc _) => False])))
+(module+ test
+  (parameterize ([cur-Γ pre-defined-Γ])
+    (run 'Zero)
+    (run '(Suc Zero))
+    (run '((Suc (Suc Zero)) : Nat))
+    ;; error case: semantic: type mismatched, expected: Nat, but got: Bool
+    #;(run '(Suc True)))
 
-  (run '(is-zero? Zero))
-  (run '(is-zero? (Suc Zero))))
+  (parameterize ([cur-Γ pre-defined-Γ])
+    (run '(data (List T)
+                [Nil : (List T)]
+                [Cons : (→ T (List T) (List T))]))
+    (run '(Cons Zero Nil))
+    ;; error case: semantic: type mismatched, expected: `Bool`, but got: `Nat`
+    #;(run '(Cons Zero (Cons True Nil))))
 
-#;(module+ test
-    (parameterize ([cur-Γ pre-defined-Γ])
-      (run 'Zero)
-      (run '(Suc Zero))
-      (run '((Suc (Suc Zero)) : Nat))
-      ;; error case: semantic: type mismatched, expected: Nat, but got: Bool
-      #;(run '(Suc True)))
+  (parameterize ([cur-Γ pre-defined-Γ])
+    (run '(data (Vec T [N Nat])
+                [Nil : (Vec T Zero)]
+                [Cons : (→ T (Vec T N) (Vec T (Suc N)))]))
+    (run '(Cons Zero Nil))
+    (run '(Cons (Suc Zero) (Cons Zero Nil)))
+    ;; error case: semantic: type mismatched, expected: `Nat`, but got: `Bool`
+    #;(run '(Cons True (Cons Zero Nil))))
 
-    (parameterize ([cur-Γ pre-defined-Γ])
-      (run '(data (List T)
-                  [Nil : (List T)]
-                  [Cons : (→ T (List T) (List T))]))
-      (run '(Cons Zero Nil))
-      ;; error case: semantic: type mismatched, expected: `Bool`, but got: `Nat`
-      #;(run '(Cons Zero (Cons True Nil))))
+  (parameterize ([cur-Γ pre-defined-Γ])
+    (run '(define one : Nat
+            (Suc Zero)))
+    (run 'one)
 
-    (parameterize ([cur-Γ pre-defined-Γ])
-      (run '(data (Vec T [N Nat])
-                  [Nil : (Vec T Zero)]
-                  [Cons : (→ T (Vec T N) (Vec T (Suc N)))]))
-      (run '(Cons Zero Nil))
-      (run '(Cons (Suc Zero) (Cons Zero Nil)))
-      ;; error case: semantic: type mismatched, expected: `Nat`, but got: `Bool`
-      #;(run '(Cons True (Cons Zero Nil))))
+    (run '(define (add2 [n : Nat]) : Nat
+            (Suc (Suc n))))
 
-    (parameterize ([cur-Γ pre-defined-Γ])
-      (run '(define one : Nat
-              (Suc Zero)))
-      (run 'one)
+    (run '(add2 Zero))
+    (run '(add2 (Suc Zero))))
 
-      (run '(define (add2 [n : Nat]) : Nat
-              (Suc (Suc n))))
+  (parameterize ([cur-Γ pre-defined-Γ])
+    (run '(define (is-zero? [n : Nat]) : Bool
+            (match n
+              [Zero => True]
+              [(Suc _) => False])))
 
-      (run '(add2 Zero))
-      (run '(add2 (Suc Zero)))))
+    (run '(is-zero? Zero))
+    (run '(is-zero? (Suc Zero)))))
