@@ -65,6 +65,25 @@
     [exp (displayln (eval exp))]))
 (define (eval exp)
   (match exp
+    [`(match ,e
+        [,pat* => ,pat-e*] ...)
+     (match-let ([(Value val typ) (eval e)])
+       (define (pattern-equal? pat val)
+         (match pat
+           [`(,first ,rest ...)
+            (and (pattern-equal? first (car val))
+                 (pattern-equal? rest (cdr val)))]
+           ['_ #t]
+           [n (equal? n val)]))
+       (define result
+         (ormap (λ (pat pat-e)
+                  (if (pattern-equal? pat val)
+                      (eval pat-e)
+                      #f))
+                pat* pat-e*))
+       (unless result
+         (error 'semantic "match fail ~a" exp))
+       result)]
     [`(,app ,arg* ...)
      (let ([appliable (eval app)]
            [arg* (map (λ (a) (eval a)) arg*)])
@@ -80,16 +99,17 @@
                (Value `(,app ,@arg*)
                       (replace-occur #:in t #:occur (subst-resolve subst))))])]
          [(Function param-name* param-typ* typ expr)
-          (let ([subst (make-subst)]
-                [map (make-hash)])
-            ; TODO: currying fix
-            (for ([param param-name*]
-                  [expect param-typ*]
-                  [arg arg*])
-              (unify expect (Value-typ arg) #:subst subst)
-              (hash-set! map param arg))
-            (Value (replace-occur #:in expr #:occur map)
-                   (replace-occur #:in typ #:occur (subst-resolve subst))))]
+          (let ([env (make-env (cur-Γ))]
+                [subst (make-subst)])
+            (parameterize ([cur-Γ env])
+              ; TODO: currying fix
+              (for ([param param-name*]
+                    [expect param-typ*]
+                    [arg arg*])
+                (unify expect (Value-typ arg) #:subst subst)
+                (bind param arg))
+              (Value (eval expr)
+                     (replace-occur #:in typ #:occur (subst-resolve subst)))))]
          [(Value _ _) appliable]
          [else (error 'semantic "not appliable: ~a" app)]))]
     [name
@@ -114,38 +134,47 @@
               [True : Bool]
               [False : Bool])))
 
-(module+ test
-  (parameterize ([cur-Γ pre-defined-Γ])
-    (run 'Zero)
-    (run '(Suc Zero))
-    (run '((Suc (Suc Zero)) : Nat))
-    ;; error case: semantic: type mismatched, expected: Nat, but got: Bool
-    #;(run '(Suc True)))
+(parameterize ([cur-Γ pre-defined-Γ])
+  (run '(define (is-zero? [n : Nat]) : Bool
+          (match n
+            [Zero => True]
+            [(Suc _) => False])))
 
-  (parameterize ([cur-Γ pre-defined-Γ])
-    (run '(data (List T)
-                [Nil : (List T)]
-                [Cons : (→ T (List T) (List T))]))
-    (run '(Cons Zero Nil))
-    ;; error case: semantic: type mismatched, expected: `Bool`, but got: `Nat`
-    #;(run '(Cons Zero (Cons True Nil))))
+  (run '(is-zero? Zero))
+  (run '(is-zero? (Suc Zero))))
 
-  (parameterize ([cur-Γ pre-defined-Γ])
-    (run '(data (Vec T [N Nat])
-                [Nil : (Vec T Zero)]
-                [Cons : (→ T (Vec T N) (Vec T (Suc N)))]))
-    (run '(Cons Zero Nil))
-    (run '(Cons (Suc Zero) (Cons Zero Nil)))
-    ;; error case: semantic: type mismatched, expected: `Nat`, but got: `Bool`
-    #;(run '(Cons True (Cons Zero Nil))))
+#;(module+ test
+    (parameterize ([cur-Γ pre-defined-Γ])
+      (run 'Zero)
+      (run '(Suc Zero))
+      (run '((Suc (Suc Zero)) : Nat))
+      ;; error case: semantic: type mismatched, expected: Nat, but got: Bool
+      #;(run '(Suc True)))
 
-  (parameterize ([cur-Γ pre-defined-Γ])
-    (run '(define one : Nat
-            (Suc Zero)))
-    (run 'one)
+    (parameterize ([cur-Γ pre-defined-Γ])
+      (run '(data (List T)
+                  [Nil : (List T)]
+                  [Cons : (→ T (List T) (List T))]))
+      (run '(Cons Zero Nil))
+      ;; error case: semantic: type mismatched, expected: `Bool`, but got: `Nat`
+      #;(run '(Cons Zero (Cons True Nil))))
 
-    (run '(define (add2 [n : Nat]) : Nat
-            (Suc (Suc n))))
+    (parameterize ([cur-Γ pre-defined-Γ])
+      (run '(data (Vec T [N Nat])
+                  [Nil : (Vec T Zero)]
+                  [Cons : (→ T (Vec T N) (Vec T (Suc N)))]))
+      (run '(Cons Zero Nil))
+      (run '(Cons (Suc Zero) (Cons Zero Nil)))
+      ;; error case: semantic: type mismatched, expected: `Nat`, but got: `Bool`
+      #;(run '(Cons True (Cons Zero Nil))))
 
-    (run '(add2 Zero))
-    (run '(add2 (Suc Zero)))))
+    (parameterize ([cur-Γ pre-defined-Γ])
+      (run '(define one : Nat
+              (Suc Zero)))
+      (run 'one)
+
+      (run '(define (add2 [n : Nat]) : Nat
+              (Suc (Suc n))))
+
+      (run '(add2 Zero))
+      (run '(add2 (Suc Zero)))))
