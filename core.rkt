@@ -6,6 +6,9 @@
 (provide (struct-out Constructor))
 (struct Constructor (typ) #:transparent)
 
+(provide (struct-out Function))
+(struct Function (param-name* param-typ* typ expr) #:transparent)
+
 (provide (struct-out Value))
 (struct Value (v typ)
   #:methods gen:custom-write

@@ -1,100 +1,109 @@
 #lang racket
 
 (require "core.rkt"
-         "substmap.rkt"
-         "lang.rkt")
-(require nanopass/base)
+         "substmap.rkt")
 
-(define (make-env)
-  (make-hash))
+(struct env (parent map)
+  #:transparent)
+(define (make-env [parent #f])
+  (env parent (make-hash)))
 (define cur-Γ (make-parameter (make-env)))
 
 (define (bind id val)
-  (hash-set! (cur-Γ) id val))
+  (hash-set! (env-map (cur-Γ)) id val))
 (define (lookup id)
-  (hash-ref (cur-Γ) id #f))
+  (let ([env (cur-Γ)])
+    (if env
+        (hash-ref (env-map env) id
+                  (parameterize ([cur-Γ (env-parent env)])
+                    (lookup id)))
+        #f)))
 
 (define (<-type val)
   (match val
     [(Value _ ty) ty]))
 
-(define (parse-constructor name typ [dependencies #f])
-  (match typ
-    [`(→ ,t* ...)
-     #:when dependencies
-     (bind name (Constructor `(→ ,@(map (λ (t) (replace-occur #:in t #:occur dependencies)) t*))))]
-    [ty #:when dependencies
-        (bind name (Constructor (replace-occur #:in ty #:occur dependencies)))]
-    [else (bind name (Constructor typ))]))
+(define (parse-constructor c [dependencies #f])
+  (match-let ([`(,name : ,typ) c])
+    (match typ
+      [`(→ ,t* ...)
+       #:when dependencies
+       (bind name (Constructor `(→ ,@(map (λ (t) (replace-occur #:in t #:occur dependencies)) t*))))]
+      [ty #:when dependencies
+          (bind name (Constructor (replace-occur #:in ty #:occur dependencies)))]
+      [else (bind name (Constructor typ))])))
 (define (run statement)
-  (define-parser parse-Incr Incr)
-  (run/nano (parse-Incr statement)))
-(define-pass run/nano : Incr (stmt) -> * ()
-  (Stmt : Stmt (stmt) -> * ()
-        [(data (,x [,x0 ,: ,t0] ...)
-               (,x* ,:1 ,t*) ...)
-         (define deps (make-hash))
-         (for ([d t0])
-           (match d
-             [`(,d ,dt)
-              (hash-set! deps d (FreeVar d dt))]
-             [d (hash-set! deps d (FreeVar d 'U))]))
-         (for ([c-name x*]
-               [c-typ t*])
-           (parse-constructor c-name c-typ deps))]
-        [(data ,x (,x* ,: ,t*) ...)
-         (for ([c-name x*]
-               [c-typ t*])
-           (parse-constructor c-name c-typ))]
-        [(define (,x [,x* ,: ,t*] ...) ,:1 ,t
-           ,e)
-         (let ([s (make-subst)]
-               [e (eval exp)])
-           (for ([p-name x*]
-                 [p-typ t*])
-             'todo)
-           (unify t (<-type e) #:subst s)
-           (error 'todo)
-           (bind x 'todo))]
-        [(define ,x ,: ,t ,e)
-         (let ([s (make-subst)]
-               [e (eval e)])
-           (unify t (<-type e) #:subst s)
-           (bind x e))]
-        [,e (displayln (eval e))]))
-(define (eval e)
-  (nanopass-case
-   (Incr Expr) e
-   [(,e ,e* ...)
-    (let ([appliable (eval e)]
-          [arg* (map (λ (arg) (eval arg)) e*)])
-      (match appliable
-        [(Constructor typ)
-         (nanopass-case
-          (Incr Typ) typ
-          [(→ ,t* ... ,t)
-           (let ([subst (make-subst)])
-             ; TODO: currying fix
-             (for ([expect t*]
-                   [arg arg*])
-               (unify expect (Value-typ arg) #:subst subst))
-             (Value `(,e ,@arg*)
-                    (replace-occur #:in t #:occur (subst-resolve subst))))])]
-        [(Value _ _) appliable]
-        [else (error 'semantic "not appliable: ~a" e)]))]
-   [,x
-    (let* ([name x]
-           [v? (lookup name)])
-      (unless v? (error 'semantic "no identifier: ~a" name))
-      (cond
-        [(Constructor? v?)
-         (nanopass-case
-          (Incr Typ) (Constructor-typ v?)
-          [(→ ,t* ... ,t)
-           v?]
-          [else (Value name (Constructor-typ v?))])]
-        [(Value? v?) v?]
-        [else (error 'unknown "unknown: ~a => ~a" name v?)]))]))
+  (match statement
+    [`(,v : ,t)
+     (let ([v (eval v)])
+       (unify t (Value-typ v))
+       v)]
+    [`(data (,typ-name ,typ-dependency* ...) ,constructors* ...)
+     typ-name
+     (define deps (make-hash))
+     (for ([d typ-dependency*])
+       (match d
+         [`(,d ,dt)
+          (hash-set! deps d (FreeVar d dt))]
+         [d (hash-set! deps d (FreeVar d 'U))]))
+     (for ([c constructors*])
+       (parse-constructor c deps))]
+    [`(data ,typ-name ,constructors* ...)
+     typ-name
+     (for ([c constructors*])
+       (parse-constructor c))]
+    [`(define (,name [,param-name* : ,param-typ*] ...) : ,typ
+        ,exp)
+     (bind name (Function param-name* param-typ* typ exp))]
+    [`(define (,name param* ...) : ,typ ,exp)
+     (error 'todo)]
+    [`(define ,name : ,typ ,exp)
+     (let ([s (make-subst)]
+           [e (eval exp)])
+       (unify typ (<-type e) #:subst s)
+       (bind name e))]
+    [exp (displayln (eval exp))]))
+(define (eval exp)
+  (match exp
+    [`(,app ,arg* ...)
+     (let ([appliable (eval app)]
+           [arg* (map (λ (a) (eval a)) arg*)])
+       (match appliable
+         [(Constructor typ)
+          (match typ
+            [`(→ ,t* ... ,t)
+             (let ([subst (make-subst)])
+               ; TODO: currying fix
+               (for ([expect t*]
+                     [arg arg*])
+                 (unify expect (Value-typ arg) #:subst subst))
+               (Value `(,app ,@arg*)
+                      (replace-occur #:in t #:occur (subst-resolve subst))))])]
+         [(Function param-name* param-typ* typ expr)
+          (let ([subst (make-subst)]
+                [map (make-hash)])
+            ; TODO: currying fix
+            (for ([param param-name*]
+                  [expect param-typ*]
+                  [arg arg*])
+              (unify expect (Value-typ arg) #:subst subst)
+              (hash-set! map param arg))
+            (Value (replace-occur #:in expr #:occur map)
+                   (replace-occur #:in typ #:occur (subst-resolve subst))))]
+         [(Value _ _) appliable]
+         [else (error 'semantic "not appliable: ~a" app)]))]
+    [name
+     (let ([v? (lookup name)])
+       (unless v? (error 'semantic "no identifier: ~a" name))
+       (cond
+         [(Constructor? v?)
+          (match (Constructor-typ v?)
+            [`(→ ,t* ... ,t)
+             v?]
+            [t (Value name t)])]
+         [(Function? v?) v?]
+         [(Value? v?) v?]
+         [else (error 'unknown "unknown: ~a => ~a" name v?)]))]))
 
 (define pre-defined-Γ (make-env))
 (parameterize ([cur-Γ pre-defined-Γ])
@@ -105,22 +114,16 @@
               [True : Bool]
               [False : Bool])))
 
-#;(parameterize ([cur-Γ pre-defined-Γ])
-    (run '(define one : Nat
-            (Suc Zero)))
-    (run 'one)
-
-    (run '(define (id [x : T]) : T x)))
-
 (module+ test
   (parameterize ([cur-Γ pre-defined-Γ])
     (run 'Zero)
-    (run '(Suc (Suc Zero)))
+    (run '(Suc Zero))
+    (run '((Suc (Suc Zero)) : Nat))
     ;; error case: semantic: type mismatched, expected: Nat, but got: Bool
     #;(run '(Suc True)))
 
   (parameterize ([cur-Γ pre-defined-Γ])
-    (run '(data (List [T : U])
+    (run '(data (List T)
                 [Nil : (List T)]
                 [Cons : (→ T (List T) (List T))]))
     (run '(Cons Zero Nil))
@@ -128,7 +131,7 @@
     #;(run '(Cons Zero (Cons True Nil))))
 
   (parameterize ([cur-Γ pre-defined-Γ])
-    (run '(data (Vec [T : U] [N : Nat])
+    (run '(data (Vec T [N Nat])
                 [Nil : (Vec T Zero)]
                 [Cons : (→ T (Vec T N) (Vec T (Suc N)))]))
     (run '(Cons Zero Nil))
@@ -136,4 +139,13 @@
     ;; error case: semantic: type mismatched, expected: `Nat`, but got: `Bool`
     #;(run '(Cons True (Cons Zero Nil))))
 
-  )
+  (parameterize ([cur-Γ pre-defined-Γ])
+    (run '(define one : Nat
+            (Suc Zero)))
+    (run 'one)
+
+    (run '(define (add2 [n : Nat]) : Nat
+            (Suc (Suc n))))
+
+    (run '(add2 Zero))
+    (run '(add2 (Suc Zero)))))
